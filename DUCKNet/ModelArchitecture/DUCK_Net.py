@@ -63,8 +63,12 @@ def create_model(img_height, img_width, input_chanels, out_classes, starting_fil
     c0 = add([l1o, t0])
     z1 = conv_block_2D(c0, starting_filters, 'duckv2', repeat=1)
 
+    # PDF预处理
+    DUCKpdf = Conv2D(1,(1,1))(q6)   #88,88,1
+    DUCKpdf = tf.keras.layers.Flatten()(DUCKpdf)  # 7744
+
     output = Conv2D(out_classes, (1, 1), activation='sigmoid')(z1)
 
-    model = Model(inputs=input_layer, outputs=output)
+    model = Model(inputs=input_layer, outputs=[output, DUCKpdf])
 
     return model

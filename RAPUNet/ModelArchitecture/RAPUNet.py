@@ -70,7 +70,7 @@ def create_model(img_height, img_width, input_chanels, out_classes, starting_fil
     H_input = UpSampling2D((2,2))(H_input)  #44,44,32
     
     out2 = SBA(L_input, H_input) #output 88,88,1
-    # out2_new = out2
+    out2_new = out2
          
     out1 = UpSampling2D(size=(8,8), interpolation='bilinear')(outd)
     out2 = UpSampling2D(size=(4,4), interpolation='bilinear')(out2)
@@ -78,11 +78,11 @@ def create_model(img_height, img_width, input_chanels, out_classes, starting_fil
     out_duat = out1+out2 
     output = Conv2D(out_classes, (1, 1), activation='sigmoid')(out_duat)
 
-    #PDF预处理
-    # outd_new = UpSampling2D(size=(2,2), interpolation='bilinear')(outd) #88,88,1
-    # RAPpdf = outd_new + out2_new    #88*88*1
-    # RAPpdf = tf.keras.layers.Flatten()(RAPpdf)  # 7744
+    # PDF预处理
+    outd_new = UpSampling2D(size=(2,2), interpolation='bilinear')(outd) #88,88,1
+    RAPpdf = outd_new + out2_new    #88*88*1
+    RAPpdf = tf.keras.layers.Flatten()(RAPpdf)  # 7744
     
-    model = Model(inputs=input_layer, outputs=output)
+    model = Model(inputs=input_layer, outputs=[output, RAPpdf])
 
     return model

@@ -11,7 +11,7 @@ from RAPUNet.ModelArchitecture.DiceLoss import dice_metric_loss
 from RAPUNet.ModelArchitecture import RAPUNet
 from RAPUNet.CustomLayers import ImageLoader2D
 from DUCKNet.ModelArchitecture import DUCK_Net
-from JointModel.Joint import JointModel,PDF
+from JointModel.Joint import JointModel
 import tensorflow_addons as tfa
 from tensorflow.python.framework.convert_to_constants import convert_variables_to_constants_v2_as_graph
 import os
@@ -77,7 +77,7 @@ rap_model = RAPUNet.create_model(img_height=img_size, img_width=img_size, input_
 duck_model = DUCK_Net.create_model(img_height=img_size, img_width=img_size, input_chanels=3, out_classes=1, starting_filters=duck_filters)
 
 # 创建联合模型
-joint_model = JointModel(rap_model, duck_model,weight_algorithm=PDF, weight1=0.5, weight2=0.5)
+joint_model = JointModel(rap_model, duck_model, weight1=0.5, weight2=0.5)
 # 编译联合模型
 joint_model.compile(optimizer=opts,loss=dice_metric_loss)
 
