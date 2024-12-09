@@ -32,13 +32,23 @@ class JointModel(tf.keras.Model):
         feat1 = tf.stop_gradient(feat1)
         feat2 = tf.stop_gradient(feat2)
 
+        # print("ConfidNet_model1 可训练参数:")
+        # for layer in self.ConfidNet_model1.layers:
+        #     print(f"{layer.name}: trainable = {layer.trainable}")
+        #
+        # print("ConfidNet_model2可训练参数: ")
+        # for layer in self.ConfidNet_model2.layers:
+        #     print(f"{layer.name}: trainable = {layer.trainable}")
+
         try:
             # 计算权重
             weights = self.weight_algorithm(feat1, feat2)
 
             # 广播权重到预测形状
-            w1 = tf.broadcast_to(weights[:,0], tf.shape(pred1))
-            w2 = tf.broadcast_to(weights[:,1], tf.shape(pred2))
+            w1 = tf.reshape(weights[:, 0], [-1, 1, 1, 1])  # shape: [batch_size, 1, 1, 1]
+            w2 = tf.reshape(weights[:, 1], [-1, 1, 1, 1])  # shape: [batch_size, 1, 1, 1]
+            # w1 = tf.broadcast_to(weights[:,0], tf.shape(pred1))
+            # w2 = tf.broadcast_to(weights[:,1], tf.shape(pred2))
 
         except Exception as e:
             tf.print("Exception in weight calculation:", e)

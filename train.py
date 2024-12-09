@@ -82,14 +82,14 @@ joint_model = JointModel(rap_model, duck_model, weight1=0.5, weight2=0.5)
 joint_model.compile(optimizer=opts,loss=dice_metric_loss)
 
 
-# model.summary()
-# print(get_flops(model))
+# JointModel.summary()
+# print(get_flops(JointModel))
 
 
 # data_path = "../data/ISICDM/train/" # Add the path to your data directory
 # test_path = "../data/ISICDM/validation/" # Add the path to your data directory  # 估测试集
-data_path = "D:/Projects_PyCharm/RAPDUCK_fusion/data/ISICDM_ArSDM_HQ_091/train/"  # Add the path to your data directory
-test_path = "D:/Projects_PyCharm/RAPDUCK_fusion/data/ISICDM_ArSDM_HQ_091/validation/"  # Add the path to your data directory  # 估测试集
+data_path = "D:/Projects_PyCharm/RAPDUCK_fusion/data/ISICDM/train/"  # Add the path to your data directory
+test_path = "D:/Projects_PyCharm/RAPDUCK_fusion/data/ISICDM/validation/"  # Add the path to your data directory  # 估测试集
 
 X, Y = ImageLoader2D.load_data(img_size, img_size, -1, 'ISICDM', data_path, resize=True)  # todo
 
