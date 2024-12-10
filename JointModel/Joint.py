@@ -8,7 +8,8 @@ class JointModel(tf.keras.Model):
         super(JointModel, self).__init__()
         self.model1 = model1
         self.model2 = model2
-        self.weight_algorithm = self.PDF
+        self.train_weight_algorithm = self.PDF
+        self.predict_weight_algorithm = self.predict_PDF
         self.weight1 = weight1
         self.weight2 = weight2
 
@@ -25,7 +26,7 @@ class JointModel(tf.keras.Model):
             tf.keras.layers.Activation('sigmoid')
         ])
 
-    def call(self, inputs):
+    def call(self, inputs, training=None, mask=None):
         # 获取两个模型的预测
         pred1,feat1 = self.model1(inputs)
         pred2,feat2 = self.model2(inputs)
@@ -41,8 +42,12 @@ class JointModel(tf.keras.Model):
         #     print(f"{layer.name}: trainable = {layer.trainable}")
 
         try:
-            # 计算权重
-            weights = self.weight_algorithm(feat1, feat2)
+
+            if training:
+                # 计算权重
+                weights = self.train_weight_algorithm(feat1, feat2)
+            else:
+                weights = self.predict_weight_algorithm(feat1, feat2,pred1,pred2)
 
             # 广播权重到预测形状
             w1 = tf.reshape(weights[:, 0], [-1, 1, 1, 1])  # shape: [batch_size, 1, 1, 1]
@@ -69,7 +74,11 @@ class JointModel(tf.keras.Model):
             loss = self.compiled_loss(y, weighted_pred)
 
         # 计算梯度
-        trainable_vars = self.model1.trainable_variables + self.model2.trainable_variables
+            # 计算梯度：包含所有可训练变量
+            trainable_vars = (self.model1.trainable_variables +
+                              self.model2.trainable_variables +
+                              self.ConfidNet_model1.trainable_variables +
+                              self.ConfidNet_model2.trainable_variables)
         gradients = tape.gradient(loss, trainable_vars)
 
         # 更新权重（注意：这里不需要重复调用apply_gradients）
@@ -78,43 +87,12 @@ class JointModel(tf.keras.Model):
         return {'loss': loss}
 
     def predict_step(self, data):
-        # 重写predict_step以确保正确处理预测
+        """
+        重写predict_step以确保正确处理预测
+        """
         x = data
-        return self(x, training=False)
-
-    # def predict_with_dynamic_weights(self, inputs, weight_calculator=None):
-    #     """
-    #     使用动态权重进行预测
-    #
-    #     Args:
-    #         inputs: 输入数据
-    #         weight_calculator: 动态权重计算函数，如果为None则使用默认权重
-    #
-    #     Returns:
-    #         weighted_pred: 加权后的预测结果
-    #         pred1: 模型1的预测结果
-    #         pred2: 模型2的预测结果
-    #         weights: 使用的权重
-    #     """
-    #     # 获取两个模型的预测和特征
-    #     pred1, feat1 = self.model1(inputs)
-    #     pred2, feat2 = self.model2(inputs)
-    #
-    #     if weight_calculator is not None:
-    #         try:
-    #             # 使用提供的权重计算函数
-    #             weights = weight_calculator(pred1, pred2, feat1, feat2)
-    #         except:
-    #             # 如果计算失败，使用默认权重
-    #             weights = [self.weight1, self.weight2]
-    #             print("Warning: Dynamic weight calculation failed, using default weights")
-    #     else:
-    #         # 使用默认权重
-    #         weights = [self.weight1, self.weight2]
-    #
-    #     # 加权组合预测结
-    #     weighted_pred = weights[0] * pred1 + weights[1] * pred2
-    #     return weighted_pred, pred1, pred2,weights
+        pred = self(x, training=False)
+        return pred
 
 
     def PDF(self,feat1, feat2):
@@ -136,8 +114,53 @@ class JointModel(tf.keras.Model):
         cb_feat1 = tf.stop_gradient(feat1_mean) + tf.stop_gradient(feat1_holo)
         cb_feat2 = tf.stop_gradient(feat2_mean) + tf.stop_gradient(feat2_holo)
 
+
         # 堆叠并应用softmax
         w_all = tf.stack([cb_feat1, cb_feat2], axis=1)  # [batch_size, 2]
         w_all = tf.nn.softmax(w_all, axis=1)
 
+        return w_all
+
+
+    def predict_PDF(self,feat1, feat2,pred1,pred2):
+        """
+        预测时的PDF权重
+        :param x:
+        :return:
+        """
+        # 计算每个预测的平均值,作为mono
+        feat1_mean = self.ConfidNet_model1(feat1)  # [batch_size]
+        feat2_mean = self.ConfidNet_model2(feat2)  # [batch_size]
+
+        # 计算holo特征
+        feat1_holo = tf.math.log(feat1_mean + 1e-8) / (tf.math.log(feat1_mean * feat2_mean + 1e-8) + 1e-8)
+        feat2_holo = tf.math.log(feat2_mean + 1e-8) / (tf.math.log(feat1_mean * feat2_mean + 1e-8) + 1e-8)
+
+        cb_feat1 = feat1_mean + feat1_holo
+        cb_feat2 = feat2_mean + feat2_holo
+
+        # 计算du
+
+        target_value = 1 / tf.cast(tf.shape(pred1)[1], tf.float32)
+        feat1_du = tf.reduce_mean(tf.abs(pred1 - target_value), axis=[1, 2, 3], keepdims=True)  # [batch_size, 1, 1, 1]
+        feat2_du = tf.reduce_mean(tf.abs(pred2 - target_value), axis=[1, 2, 3], keepdims=True)  # [batch_size, 1, 1, 1]
+
+        # 调整维度以匹配cb_feat
+        feat1_du = tf.squeeze(feat1_du, axis=[1, 2, 3])  # [batch_size]
+        feat2_du = tf.squeeze(feat2_du, axis=[1, 2, 3])  # [batch_size]
+        feat1_du = tf.expand_dims(feat1_du, axis=1)  # [batch_size, 1]
+        feat2_du = tf.expand_dims(feat2_du, axis=1)  # [batch_size, 1]
+
+        # 判断DU
+        condition = feat1_du > feat2_du
+
+        # RC校准
+        rc_feat1 = tf.where(condition,tf.ones_like(feat1_du),feat1_du / feat2_du)
+        rc_feat2 = tf.where(condition,feat2_du / feat1_du,tf.ones_like(feat2_du))
+        ccb_feat1 = cb_feat1 * rc_feat1
+        ccb_feat2 = cb_feat2 * rc_feat2
+
+        # 堆叠并应用softmax
+        w_all = tf.stack([ccb_feat1, ccb_feat2], axis=1)  # [batch_size, 2]
+        w_all = tf.nn.softmax(w_all, axis=1)
         return w_all

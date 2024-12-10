@@ -81,9 +81,15 @@ joint_model = JointModel(rap_model, duck_model, weight1=0.5, weight2=0.5)
 # 编译联合模型
 joint_model.compile(optimizer=opts,loss=dice_metric_loss)
 
-
-# JointModel.summary()
-# print(get_flops(JointModel))
+# 创建一个示例输入来构建模型
+dummy_input = tf.random.normal((1, img_size, img_size, 3))  # batch_size=1, height=img_size, width=img_size, channels=3
+_ = joint_model(dummy_input)  # 这一步会构建模型
+print("RAPUNet 模型结构:")
+rap_model.summary()
+print("CUDKNet 模型结构:")
+duck_model.summary()
+print("Joint 模型结构：")
+joint_model.summary()
 
 
 # data_path = "../data/ISICDM/train/" # Add the path to your data directory
@@ -91,16 +97,19 @@ joint_model.compile(optimizer=opts,loss=dice_metric_loss)
 data_path = "D:/Projects_PyCharm/RAPDUCK_fusion/data/ISICDM/train/"  # Add the path to your data directory
 test_path = "D:/Projects_PyCharm/RAPDUCK_fusion/data/ISICDM/validation/"  # Add the path to your data directory  # 估测试集
 
-X, Y = ImageLoader2D.load_data(img_size, img_size, -1, 'ISICDM', data_path, resize=True)  # todo
+# X, Y = ImageLoader2D.load_data(img_size, img_size, -1, 'ISICDM', data_path, resize=True)
 
 # split train/valid/test as 0.8/0.1/0.1
 # x_train, x_test, y_train, y_test = train_test_split(X, Y, test_size=0.1, shuffle= True, random_state = seed_value)
 # x_train, x_valid, y_train, y_valid = train_test_split(x_train, y_train, test_size=0.111, shuffle= True, random_state = seed_value)
 
 # split train/vaid as 0.9/0.1 and fixed test data
-x_train, x_valid, y_train, y_valid = train_test_split(X, Y, test_size=0.1, shuffle=True, random_state=seed_value)
+# x_train, x_valid, y_train, y_valid = train_test_split(X, Y, test_size=0.1, shuffle=True, random_state=seed_value)
+# x_test, y_test = ImageLoader2D.load_data(img_size, img_size, -1, 'ISICDM', test_path, resize=True)
+# 不划分版本
+x_train, y_train = ImageLoader2D.load_data(img_size, img_size, -1, 'ISICDM', data_path, resize=True)
 
-x_test, y_test = ImageLoader2D.load_data(img_size, img_size, -1, 'ISICDM', test_path, resize=True)  # todo
+x_valid, y_valid = ImageLoader2D.load_data(img_size, img_size, -1, 'ISICDM', test_path, resize=True)
 
 
 aug_train = albu.Compose([
@@ -188,21 +197,23 @@ for epoch in range(0, EPOCHS):
     prediction_valid = joint_model.predict(x_valid, verbose=0)
     loss_valid = dice_metric_loss(y_valid, prediction_valid)
     loss_valid = loss_valid.numpy()
-    print("RAPUNet Loss Validation: " + str(loss_valid))
+    print("JointNet Loss Validation: " + str(loss_valid))
 
-    prediction_test = joint_model.predict(x_test, verbose=0)
-    loss_test = dice_metric_loss(y_test, prediction_test)
-    loss_test = loss_test.numpy()
-    print("RAPUNet Loss Test: " + str(loss_test))
+    # 无test版本
+    # prediction_test = joint_model.predict(x_test, verbose=0)
+    # loss_test = dice_metric_loss(y_test, prediction_test)
+    # loss_test = loss_test.numpy()
+    # print("JointNet Loss Test: " + str(loss_test))
 
     with open(progressfull_path, 'a') as f:
-        f.write('epoch: ' + str(epoch) + '\nval_loss: ' + str(loss_valid) + '\ntest_loss: ' + str(loss_test) + '\n\n\n')
+        f.write('epoch: ' + str(epoch) + '\nval_loss: ' + str(loss_valid) + '\n\n\n')
+        # f.write('epoch: ' + str(epoch) + '\nval_loss: ' + str(loss_valid) + '\ntest_loss: ' + str(loss_test) + '\n\n\n')
 
     if min_loss_for_saving > loss_valid:
         min_loss_for_saving = loss_valid
-        print("Saved RAPUNet model with val_loss: ", loss_valid)
+        print("Saved JointNet model with val_loss: ", loss_valid)
         rap_model.save(model_path)
-        rap_model.save("RAPUNet_best_model.h5")
+        rap_model.save("JointNet_best_model.h5")
 
     del image_augmented
     del mask_augmented
@@ -210,23 +221,27 @@ for epoch in range(0, EPOCHS):
     gc.collect()
 
 print("Loading the model")
+model_path = "JointNet_best_model.h5"
 
-model = tf.keras.models.load_model(model_path, custom_objects={'dice_metric_loss': dice_metric_loss})
-
-
-
-prediction_train = model.predict(x_train, batch_size=1)
-prediction_valid = model.predict(x_valid, batch_size=1)
-prediction_test = model.predict(x_test, batch_size=1)
+joint_model = tf.keras.models.load_model(model_path, custom_objects={'dice_metric_loss': dice_metric_loss})
 
 
+
+prediction_train = joint_model.predict(x_train, batch_size=1)[0]
+prediction_valid = joint_model.predict(x_valid, batch_size=1)[0]
+
+# prediction_test = model.predict(x_test, batch_size=1).numpy()
+
+# prediction_train = prediction_train.reshape(prediction_train.shape[0], -1)
+# prediction_valid = prediction_valid.reshape(prediction_valid.shape[0], -1)
+# prediction_test = prediction_test.reshape(prediction_test.shape[0], -1)
 
 print("Predictions done")
 
 dice_train = f1_score(np.ndarray.flatten(np.array(y_train, dtype=bool)),
                       np.ndarray.flatten(prediction_train > 0.5))
-dice_test = f1_score(np.ndarray.flatten(np.array(y_test, dtype=bool)),
-                     np.ndarray.flatten(prediction_test > 0.5))
+# dice_test = f1_score(np.ndarray.flatten(np.array(y_test, dtype=bool)),
+#                      np.ndarray.flatten(prediction_test > 0.5))
 dice_valid = f1_score(np.ndarray.flatten(np.array(y_valid, dtype=bool)),
                       np.ndarray.flatten(prediction_valid > 0.5))
 
@@ -235,8 +250,8 @@ print("Dice finished")
 
 miou_train = jaccard_score(np.ndarray.flatten(np.array(y_train, dtype=bool)),
                            np.ndarray.flatten(prediction_train > 0.5))
-miou_test = jaccard_score(np.ndarray.flatten(np.array(y_test, dtype=bool)),
-                          np.ndarray.flatten(prediction_test > 0.5))
+# miou_test = jaccard_score(np.ndarray.flatten(np.array(y_test, dtype=bool)),
+#                           np.ndarray.flatten(prediction_test > 0.5))
 miou_valid = jaccard_score(np.ndarray.flatten(np.array(y_valid, dtype=bool)),
                            np.ndarray.flatten(prediction_valid > 0.5))
 
@@ -244,8 +259,8 @@ print("Miou finished")
 
 precision_train = precision_score(np.ndarray.flatten(np.array(y_train, dtype=bool)),
                                   np.ndarray.flatten(prediction_train > 0.5))
-precision_test = precision_score(np.ndarray.flatten(np.array(y_test, dtype=bool)),
-                                 np.ndarray.flatten(prediction_test > 0.5))
+# precision_test = precision_score(np.ndarray.flatten(np.array(y_test, dtype=bool)),
+#                                  np.ndarray.flatten(prediction_test > 0.5))
 precision_valid = precision_score(np.ndarray.flatten(np.array(y_valid, dtype=bool)),
                                   np.ndarray.flatten(prediction_valid > 0.5))
 
@@ -253,8 +268,8 @@ print("Precision finished")
 
 recall_train = recall_score(np.ndarray.flatten(np.array(y_train, dtype=bool)),
                             np.ndarray.flatten(prediction_train > 0.5))
-recall_test = recall_score(np.ndarray.flatten(np.array(y_test, dtype=bool)),
-                           np.ndarray.flatten(prediction_test > 0.5))
+# recall_test = recall_score(np.ndarray.flatten(np.array(y_test, dtype=bool)),
+#                            np.ndarray.flatten(prediction_test > 0.5))
 recall_valid = recall_score(np.ndarray.flatten(np.array(y_valid, dtype=bool)),
                             np.ndarray.flatten(prediction_valid > 0.5))
 
@@ -262,30 +277,39 @@ print("Recall finished")
 
 accuracy_train = accuracy_score(np.ndarray.flatten(np.array(y_train, dtype=bool)),
                                 np.ndarray.flatten(prediction_train > 0.5))
-accuracy_test = accuracy_score(np.ndarray.flatten(np.array(y_test, dtype=bool)),
-                               np.ndarray.flatten(prediction_test > 0.5))
+# accuracy_test = accuracy_score(np.ndarray.flatten(np.array(y_test, dtype=bool)),
+#                                np.ndarray.flatten(prediction_test > 0.5))
 accuracy_valid = accuracy_score(np.ndarray.flatten(np.array(y_valid, dtype=bool)),
                                 np.ndarray.flatten(prediction_valid > 0.5))
 
 print("Accuracy finished")
 
-final_file = 'results_' + rap_model_type + '_' + dataset_type + '.txt'
+final_file = 'results_' + model_type + '_' + dataset_type + '.txt'
 print(final_file)
 
 with open(final_file, 'a') as f:
     f.write(dataset_type + '\n\n')
     f.write(model_path + '\n\n')
-    f.write(' dice_train: ' + str(dice_train) + ' dice_valid: ' + str(dice_valid) + ' dice_test: ' + str(dice_test) + '\n\n')
+    # f.write(' dice_train: ' + str(dice_train) + ' dice_valid: ' + str(dice_valid) + ' dice_test: ' + str(dice_test) + '\n\n')
+    #
+    # f.write(
+    #     'miou_train: ' + str(miou_train) + ' miou_valid: ' + str(miou_valid) + ' miou_test: ' + str(miou_test) + '\n\n')
+    # f.write('precision_train: ' + str(precision_train) + ' precision_valid: ' + str(
+    #     precision_valid) + ' precision_test: ' + str(precision_test) + '\n\n')
+    # f.write('recall_train: ' + str(recall_train) + ' recall_valid: ' + str(recall_valid) + ' recall_test: ' + str(
+    #     recall_test) + '\n\n')
+    # f.write(
+    #     'accuracy_train: ' + str(accuracy_train) + ' accuracy_valid: ' + str(accuracy_valid) + ' accuracy_test: ' + str(
+    #         accuracy_test) + '\n\n\n\n')
+    f.write(' dice_train: ' + str(dice_train) + ' dice_valid: ' + str(dice_valid) + '\n\n')
 
     f.write(
-        'miou_train: ' + str(miou_train) + ' miou_valid: ' + str(miou_valid) + ' miou_test: ' + str(miou_test) + '\n\n')
+        'miou_train: ' + str(miou_train) + ' miou_valid: ' + str(miou_valid) + '\n\n')
     f.write('precision_train: ' + str(precision_train) + ' precision_valid: ' + str(
-        precision_valid) + ' precision_test: ' + str(precision_test) + '\n\n')
-    f.write('recall_train: ' + str(recall_train) + ' recall_valid: ' + str(recall_valid) + ' recall_test: ' + str(
-        recall_test) + '\n\n')
+        precision_valid) + '\n\n')
+    f.write('recall_train: ' + str(recall_train) + ' recall_valid: ' + str(recall_valid) +  '\n\n')
     f.write(
-        'accuracy_train: ' + str(accuracy_train) + ' accuracy_valid: ' + str(accuracy_valid) + ' accuracy_test: ' + str(
-            accuracy_test) + '\n\n\n\n')
+        'accuracy_train: ' + str(accuracy_train) + ' accuracy_valid: ' + str(accuracy_valid) + '\n\n\n\n')
 
 print('File done')
 
